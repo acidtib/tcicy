@@ -7,7 +7,7 @@ require 'net/http'
 require 'tempfile'
 
 # Number of threads for concurrent downloads
-thread_count = 2
+thread_count = 5
 
 # Default Cards 447 MB
 SCRYFALL_DATA_PATH = "/default-cards/default-cards-20241009214135.json"
@@ -57,8 +57,7 @@ end
 queue = Queue.new
 
 # Add each card with an image to the queue
-cards = data[0...10]
-puts "Found #{cards.size} cards, downloading images..."
+cards = data #[0...10]
 cards.each do |card|
   next unless card['image_uris'] && card['image_uris']['png']
   queue << card
@@ -67,6 +66,8 @@ end
 # Initialize the progress bar
 total_images = queue.size
 progress_bar = ProgressBar.new(total_images)
+
+puts "Found #{total_images} cards, downloading images..."
 
 # Define a worker method to download the images
 def download_images(queue, output_dir, progress_bar)
