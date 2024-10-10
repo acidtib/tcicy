@@ -1,4 +1,7 @@
+.mts
+
 datasets/*.json
 
 datasets/tcg_magic
 datasets/tcg_pokemon
+
