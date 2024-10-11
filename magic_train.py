@@ -13,7 +13,7 @@ strategy = tf.distribute.MirroredStrategy()
 print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 ## Data Preprocessing
-batch_size = 32
+batch_size = 32 # 64 or 128
 epochs = 200
 img_width = 224 # MobileNetV2 input size
 img_height = 224
@@ -25,15 +25,16 @@ print(image_count)
 
 train_generator = image_dataset_from_directory(
     data_dir,
-    validation_split=0.2,
+    validation_split=0.15,
     subset="training",
     seed=123,
+    shuffle=True,
     image_size=(img_height, img_width),
     batch_size=batch_size)
 
 validation_generator = image_dataset_from_directory(
     data_dir,
-    validation_split=0.2,
+    validation_split=0.15,
     subset="validation",
     seed=123,
     image_size=(img_height, img_width),
@@ -43,7 +44,9 @@ class_names = train_generator.class_names
 print(f"Class names: {class_names}")
 
 # Save class names to a text file
-with open('models/tcg_magic/class_names.txt', 'w') as f:
+class_names_path = 'models/tcg_magic/class_names.txt'
+os.makedirs(os.path.dirname(class_names_path), exist_ok=True)
+with open(class_names_path, 'w') as f:
     for class_name in class_names:
         f.write(f"{class_name}\n")
 
@@ -74,6 +77,9 @@ for images, _ in train_generator.take(1):
         plt.axis("off")
 plt.savefig('results/data_augmentation.png')
 
+# Define the model checkpoint path
+best_model_path = 'models/tcg_magic/best_model.keras'
+
 # Create and compile the model within the strategy scope
 with strategy.scope():
     # Load MobileNetV2 Pretrained Model
@@ -83,6 +89,12 @@ with strategy.scope():
 
     # Freeze the base_model
     base_model.trainable = False
+
+    # # when we have more data
+    # base_model.trainable = True
+    # # Optionally, freeze some initial layers
+    # for layer in base_model.layers[:100]:
+    #     layer.trainable = False
 
     # Add new classification head
     model = models.Sequential([
@@ -95,8 +107,13 @@ with strategy.scope():
         layers.Dense(len(class_names), activation='softmax')
     ])
 
+    # If the best model exists, load weights from it
+    if os.path.exists(best_model_path):
+        print(f"Loading weights from the best model at {best_model_path}")
+        model.load_weights(best_model_path)
+
     # Compile the model
-    model.compile(optimizer=tf.keras.optimizers.Adam(),
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
                   loss=tf.keras.losses.SparseCategoricalCrossentropy(),
                   metrics=['accuracy'])
 
@@ -104,8 +121,8 @@ with strategy.scope():
 model.summary()
 
 # Set up early stopping and model checkpointing
-early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-checkpoint = ModelCheckpoint('models/tcg_magic/best_model.keras', save_best_only=True)
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+checkpoint = ModelCheckpoint(best_model_path, save_best_only=True, monitor='val_loss', mode='min')
 
 ## Training the model
 history = model.fit(
@@ -136,15 +153,17 @@ plt.legend(loc='upper right')
 plt.title('Training and Validation Loss')
 plt.savefig('results/training_results.png')
 
-## Save the model
-model.save('models/tcg_magic/model.keras')
+## Save the final model
+final_model_path = 'models/tcg_magic/final_model.keras'
+model.save(final_model_path)
 
 # Convert the model to TensorFlow Lite
 converter = tf.lite.TFLiteConverter.from_keras_model(model)
 tflite_model = converter.convert()
 
-# Save the model.
-with open('models/tcg_magic/model.tflite', 'wb') as f:
+# Save the TFLite model.
+tflite_model_path = 'models/tcg_magic/model.tflite'
+with open(tflite_model_path, 'wb') as f:
     f.write(tflite_model)
 
-print("Model saved.")
+print("Model and TFLite model saved.")

@@ -9,7 +9,7 @@ require 'etc'
 
 # Number of threads for concurrent downloads
 thread_count = Etc.nprocessors
-max_cards_to_download = 500 # Set to nil if you want to download all cards
+max_cards_to_download = 1200 # Set to nil if you want to download all cards
 
 
 puts "Using #{thread_count} threads"
