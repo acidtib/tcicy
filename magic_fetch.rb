@@ -6,10 +6,11 @@ require 'progress_bar'
 require 'net/http'
 require 'tempfile'
 require 'etc'
+require 'mini_magick'
 
 # Number of threads for concurrent downloads
 thread_count = Etc.nprocessors
-max_cards_to_download = 1200 # Set to nil if you want to download all cards
+max_cards_to_download = 250 # Set to nil if you want to download all cards
 
 
 puts "Using #{thread_count} threads"
@@ -25,7 +26,7 @@ scryfall_data_paths = [
   "/default-cards/default-cards-20241010212018.json",
 
   # 2.1 GB
-  # "/all-cards/all-cards-20241010213949.json"
+  "/all-cards/all-cards-20241010213949.json"
 ]
 scryfall_data_host = "https://data.scryfall.io"
 
@@ -103,7 +104,7 @@ def download_images(queue, output_dir, progress_bar, progress_mutex)
     folder_path = File.join(output_dir, sanitized_name)
     FileUtils.mkdir_p(folder_path)
     image_url = card['image_uris']['png']
-    image_name = "#{sanitized_name}_#{sanitized_collector_number}_#{sanitized_set_name}.png"
+    image_name = "#{sanitized_name}_#{sanitized_collector_number}_#{sanitized_set_name}_raw.png"
     image_path = File.join(folder_path, image_name)
 
     if File.exist?(image_path)
@@ -113,9 +114,42 @@ def download_images(queue, output_dir, progress_bar, progress_mutex)
 
     download_image(image_url, image_path)
 
+    output_image_name = "#{sanitized_name}_#{sanitized_collector_number}_#{sanitized_set_name}.png"
+    output_path = File.join(folder_path, output_image_name)
+    resize_and_pad(image_path, output_path, 224)
+
+    FileUtils.rm(image_path)
+
     # Increment the progress bar safely
     progress_mutex.synchronize { progress_bar.increment! }
   end
+end
+
+def resize_and_pad(image_path, output_path, target_size=224)
+  image = MiniMagick::Image.open(image_path)
+
+  # Calculate new dimensions maintaining aspect ratio
+  aspect_ratio = image.width.to_f / image.height.to_f
+  if aspect_ratio > 1  # Wider than tall
+    new_width = target_size
+    new_height = (target_size / aspect_ratio).round
+  else  # Taller than wide
+    new_width = (target_size * aspect_ratio).round
+    new_height = target_size
+  end
+
+  # Resize while maintaining aspect ratio
+  image.resize "#{new_width}x#{new_height}"
+
+  # Pad the image to the target size (224x224) with a black background
+  image.combine_options do |c|
+    c.gravity 'center'
+    c.background 'black'
+    c.extent "#{target_size}x#{target_size}"
+  end
+
+  # Save the resized and padded image
+  image.write(output_path)
 end
 
 # Start a pool of threads to download images concurrently
