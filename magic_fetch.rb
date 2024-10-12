@@ -10,23 +10,23 @@ require 'mini_magick'
 
 # Number of threads for concurrent downloads
 thread_count = Etc.nprocessors
-max_cards_to_download = 250 # Set to nil if you want to download all cards
+max_cards_to_download = nil # Set to nil if you want to download all cards
 
 
 puts "Using #{thread_count} threads"
 
 scryfall_data_paths = [
   # 203 MB
-  "/unique-artwork/unique-artwork-20241010211157.json",
+  # "/unique-artwork/unique-artwork-20241010211157.json",
 
   # 146 MB
   "/oracle-cards/oracle-cards-20241010210413.json",
 
   # 447 MB
-  "/default-cards/default-cards-20241010212018.json",
+  # "/default-cards/default-cards-20241010212018.json",
 
   # 2.1 GB
-  "/all-cards/all-cards-20241010213949.json"
+  # "/all-cards/all-cards-20241010213949.json"
 ]
 scryfall_data_host = "https://data.scryfall.io"
 
