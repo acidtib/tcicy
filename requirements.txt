@@ -1,4 +1,11 @@
-matplotlib
 numpy
+
 pillow
-tensorflow[and-cuda]
+
+tensorflow[and-cuda] 
+
+scikit-learn
+
+tqdm
+
+matplotlib

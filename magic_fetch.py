@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 10000
+MAX_IMAGES_PER_FILE = None
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
@@ -114,27 +114,18 @@ def process_image(image_path):
             # Get the current dimensions
             width, height = img.size
             
-            # Calculate the new size while keeping the aspect ratio
-            new_size = 256  # Example size; you can adjust this if needed
-            if width > height:
-                aspect_ratio = height / width
-                img = img.resize((new_size, int(new_size * aspect_ratio)), Image.LANCZOS)
-            else:
-                aspect_ratio = width / height
-                img = img.resize((int(new_size * aspect_ratio), new_size), Image.LANCZOS)
-
             # Calculate padding to make the image square
-            pad_width = (new_size - img.width) // 2
-            pad_height = (new_size - img.height) // 2
+            pad_width = (max(width, height) - img.width) // 2
+            pad_height = (max(width, height) - img.height) // 2
             
             # Pad to make it square
             img = ImageOps.expand(img, (pad_width, pad_height, pad_width, pad_height), fill=(0, 0, 0))  # Black padding
 
-            # Final resize to ensure it's 224x224
+            # Resize to 224x224
             img = img.resize((224, 224), Image.LANCZOS)
 
             # Save the processed image
-            img.save(image_path, optimize=True, quality=95)
+            img.save(image_path, optimize=True, quality=100)
     except Exception as e:
         tqdm.write(f"Error processing image: {image_path} - {e}")
             
