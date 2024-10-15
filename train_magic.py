@@ -1,14 +1,14 @@
 import tensorflow as tf
-from tensorflow.keras import layers  # Import layers here
+from tensorflow.keras import layers
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau, TensorBoard
-from tensorflow.keras.preprocessing.image import ImageDataGenerator  # Added import
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 import numpy as np
 import os
 from datetime import datetime
-import matplotlib.pyplot as plt  # Importing matplotlib for image visualization
+import matplotlib.pyplot as plt
 
 class CustomDataGenerator(tf.keras.utils.Sequence):
     def __init__(self, directory, batch_size, image_size, shuffle=True, augment=False):
@@ -136,6 +136,12 @@ def save_augmented_visualization(images, generator, output_path):
         plt.axis("off")
     plt.savefig(output_path)  # Save the figure
     plt.close()  # Close the figure to free memory
+
+
+# Get the list of available GPUs
+gpus = tf.config.list_physical_devices('GPU')
+# Select GPU 1 (index 1, since indexing starts at 0)
+tf.config.set_visible_devices(gpus[1], 'GPU')
 
 # Set up paths and parameters
 data_dir = 'datasets/tcg_magic/training'
