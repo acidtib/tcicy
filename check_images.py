@@ -47,7 +47,7 @@ def remove_corrupted_images(directory):
 
 if __name__ == "__main__":
     # Define the base directory to start checking for PNGs
-    base_directory = "datasets/tcg_magic/training"
+    base_directory = "datasets/tcg_magic/data/train"
 
     # Debugging: Ensure we get some output to indicate the script is running
     print(f"Starting corruption check in: {base_directory}")

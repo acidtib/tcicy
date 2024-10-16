@@ -211,7 +211,7 @@ callbacks = [
 ]
 
 # Train or continue training the model
-epochs = 80  # Increased epochs, EarlyStopping will prevent overfitting
+epochs = 100  # Increased epochs, EarlyStopping will prevent overfitting
 history = model.fit(
     train_generator,
     validation_data=validation_generator,
@@ -238,7 +238,7 @@ print("Starting fine-tuning...")
 history_fine = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=80,
+    epochs=100,
     callbacks=callbacks
 )
 
