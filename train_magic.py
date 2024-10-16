@@ -101,20 +101,6 @@ class CustomDataGenerator(tf.keras.utils.Sequence):
                 break  # Stop after generating one augmented image
         return np.array(augmented_images)
 
-    def save_sample_augmented_images(self, output_dir, n_samples=5):
-        """ Save a few augmented sample images for inspection. """
-        os.makedirs(output_dir, exist_ok=True)
-        for idx, img_file in enumerate(self.image_files[:n_samples]):
-            img = self.load_image(os.path.join(self.directory, img_file))
-            img = img.numpy()  # Convert EagerTensor to NumPy array
-            img = img.reshape((1,) + img.shape)  # Reshape for the generator
-            
-            for augmented_img in self.datagen.flow(img, batch_size=1):
-                augmented_img = (augmented_img[0] * 255).astype(np.uint8)  # Convert back to uint8
-                augmented_img_path = os.path.join(output_dir, f"augmented_{idx}.png")
-                tf.keras.preprocessing.image.save_img(augmented_img_path, augmented_img)
-                break  # Stop after saving one augmented image
-
 # Save image visualizations
 def save_image_visualization(images, labels, class_names, output_path):
     plt.figure(figsize=(10, 10))
@@ -130,45 +116,57 @@ def save_image_visualization(images, labels, class_names, output_path):
 def save_augmented_visualization(images, generator, output_path):
     plt.figure(figsize=(10, 10))
     for i in range(9):
-        augmented_images = generator.augment_images(images[i:i + 1])  # Augment the first image
+        augmented_images = generator.augment_images(images[i:i+1])  # Augment the first image
         ax = plt.subplot(3, 3, i + 1)
         plt.imshow(augmented_images[0])  # Removed .numpy()
         plt.axis("off")
     plt.savefig(output_path)  # Save the figure
     plt.close()  # Close the figure to free memory
 
+def get_distribution_strategy():
+    # Check if TPU is available (for Google Colab)
+    try:
+        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
+        tf.config.experimental_connect_to_cluster(tpu)
+        tf.tpu.experimental.initialize_tpu_system(tpu)
+        strategy = tf.distribute.TPUStrategy(tpu)
+        print("Running on TPU:", tpu.cluster_spec().as_dict()["worker"])
+        return strategy
+    except ValueError:
+        print("TPU not found. Checking for GPUs...")
+    
+    # Check for GPUs
+    gpus = tf.config.list_physical_devices('GPU')
+    if len(gpus) > 1:
+        strategy = tf.distribute.MirroredStrategy()
+        print(f"Running on {len(gpus)} GPUs")
+    elif len(gpus) == 1:
+        strategy = tf.distribute.OneDeviceStrategy("/gpu:0")
+        print("Running on single GPU")
+    else:
+        strategy = tf.distribute.OneDeviceStrategy("/cpu:0")
+        print("Running on CPU")
+    
+    return strategy
 
-# Get the list of available GPUs
-gpus = tf.config.list_physical_devices('GPU')
-# Select GPU 1 (index 1, since indexing starts at 0)
-tf.config.set_visible_devices(gpus[1], 'GPU')
+# Get the distribution strategy
+strategy = get_distribution_strategy()
 
 # Set up paths and parameters
-data_dir = 'datasets/tcg_magic/training'
-output_augmented_dir = 'datasets/tcg_magic/augmented_samples'  # Directory to save augmented images
+data_dir = 'datasets/tcg_magic/data/train'
 image_size = (224, 224)
-batch_size = 32
+batch_size = 32 * strategy.num_replicas_in_sync  # Adjust batch size for distributed training
 
-# Create custom data generators with augmentation enabled
+# Create custom data generators
 train_generator = CustomDataGenerator(data_dir, batch_size, image_size, augment=True)
 validation_generator = CustomDataGenerator(data_dir, batch_size, image_size)
-
-# Save a few augmented samples for inspection
-train_generator.save_sample_augmented_images(output_augmented_dir, n_samples=5)
-
-# Save visualizations earlier in the code
-image_visualization_path = 'visualizations/original_images.png'
-augmented_visualization_path = 'visualizations/augmented_images.png'
-os.makedirs('visualizations', exist_ok=True)  # Create directory if it doesn't exist
 
 # Get the first batch of images and labels
 images, labels = train_generator.__getitem__(0)
 
-# Save original images visualization
-save_image_visualization(images, labels, train_generator.classes, image_visualization_path)
-
 # Save augmented images visualization
-save_augmented_visualization(images, train_generator, augmented_visualization_path)
+augmented_visualization_path = 'datasets/tcg_magic/augmented_images.png'
+save_image_visualization(images, labels, train_generator.classes, augmented_visualization_path)
 
 # Split data into train and validation
 num_samples = len(train_generator.image_files)
@@ -176,42 +174,41 @@ num_train = int(0.8 * num_samples)
 train_generator.image_files = train_generator.image_files[:num_train]
 validation_generator.image_files = validation_generator.image_files[num_train:]
 
-# Load pre-trained MobileNetV2 model
-base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+# Define the model creation function
+def create_model(num_classes):
+    with strategy.scope():
+        base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+        x = base_model.output
+        x = GlobalAveragePooling2D()(x)
+        x = Dense(1024, activation='relu')(x)
+        output = Dense(num_classes, activation='softmax')(x)
+        model = Model(inputs=base_model.input, outputs=output)
+        
+        # Freeze the base model layers for initial training
+        for layer in base_model.layers:
+            layer.trainable = False
+        
+        model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+    return model
 
-# Add custom layers
-x = base_model.output
-x = GlobalAveragePooling2D()(x)
-x = Dense(1024, activation='relu')(x)
-output = Dense(len(train_generator.classes), activation='softmax')(x)
+# Create the model using the distribution strategy
+with strategy.scope():
+    model = create_model(len(train_generator.classes))
 
-# Create the final model
-model = Model(inputs=base_model.input, outputs=output)
+# Set up TensorBoard and callbacks
 
-# Check if a previously saved best model exists
-best_model_path = 'models/tcg_magic/best_model.keras'
-if os.path.exists(best_model_path):
-    print("Loading existing best model...")
-    model = tf.keras.models.load_model(best_model_path)
-else:
-    # Freeze the base model layers for initial training
-    for layer in base_model.layers:
-        layer.trainable = False
-
-    # Compile the model
-    model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-
-# Set up TensorBoard
 log_dir = "models/tcg_magic/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+os.makedirs("models/tcg_magic/logs", exist_ok=True)
+
 callbacks = [
-    EarlyStopping(patience=6, restore_best_weights=True),
+    EarlyStopping(patience=5, restore_best_weights=True),
     ModelCheckpoint('models/tcg_magic/best_model.keras', save_best_only=True),
     ReduceLROnPlateau(factor=0.1, patience=3),
     TensorBoard(log_dir=log_dir, histogram_freq=1)
 ]
 
-# Train or continue training the model
-epochs = 100  # Increased epochs, EarlyStopping will prevent overfitting
+# Train the model
+epochs = 1
 history = model.fit(
     train_generator,
     validation_data=validation_generator,
@@ -220,25 +217,24 @@ history = model.fit(
 )
 
 # Save the model
-model.save(best_model_path)
+model.save('models/tcg_magic/classifier.keras')
 
 # Fine-tuning
-# Unfreeze some layers of the base model
 print("Preparing to fine-tune...")
-for layer in base_model.layers[-40:]:
-    layer.trainable = True
+with strategy.scope():
+    for layer in model.layers[-40:]:
+        layer.trainable = True
     
-# Recompile the model
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002),
-              loss='categorical_crossentropy',
-              metrics=['accuracy'])
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0002),
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
 
 # Continue training (fine-tuning)
 print("Starting fine-tuning...")
 history_fine = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=100,
+    epochs=epochs,
     callbacks=callbacks
 )
 
