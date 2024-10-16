@@ -208,7 +208,8 @@ callbacks = [
 ]
 
 # Train the model
-epochs = 1
+epochs = 200
+print("Starting training...")
 history = model.fit(
     train_generator,
     validation_data=validation_generator,
