@@ -1,9 +1,6 @@
 from datasets import load_dataset
 from huggingface_hub import login
 
-# Login to Hugging Face
-# login(token="your_hugging_face_token")
-
 # Load the dataset from the local folder
 dataset = load_dataset("imagefolder", data_dir="./datasets/tcg_magic/data/train", split="train")
 
