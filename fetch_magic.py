@@ -143,7 +143,7 @@ def main():
     # Create the directory if it doesn't exist
     directory = 'datasets/tcg_magic'
     os.makedirs(directory, exist_ok=True)
-    images_directory = f"{directory}/training"
+    images_directory = f"{directory}/data/train"
     os.makedirs(images_directory, exist_ok=True)
 
     # Check if all required JSON files exist
