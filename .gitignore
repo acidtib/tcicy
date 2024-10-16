@@ -5,6 +5,6 @@ datasets/*.json
 datasets/tcg_magic
 datasets/tcg_pokemon
 
-#results/*.png
+models
 
 .venv

@@ -37,10 +37,9 @@ def load_class_names(data_dir):
 
 # Example usage
 if __name__ == "__main__":
-    model_path = 'models/tcg_magic/classifier_fine_tuned.keras'  # Path to your trained model
-    data_dir = 'datasets/tcg_magic/training'  # Path to your training data directory
-    test_image_path = "datasets/tcg_magic/training/00adcfec_9893_48e7_b905_158eac5497f2.png"
-    # test_image_path = "/home/acid/Downloads/IMG_1460.jpg"
+    model_path = 'models/tcg_magic/classifier_fine_tuned.keras'
+    data_dir = 'datasets/tcg_magic/data/train'
+    test_image_path = "datasets/tcg_magic/data/train/00adcfec_9893_48e7_b905_158eac5497f2.png"
     
     class_names = load_class_names(data_dir)
     
