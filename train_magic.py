@@ -126,11 +126,23 @@ def save_augmented_visualization(images, generator, output_path):
 def get_distribution_strategy():
     # Check if TPU is available (for Google Colab)
     try:
-        tpu = tf.distribute.cluster_resolver.TPUClusterResolver()
-        tf.config.experimental_connect_to_cluster(tpu)
-        tf.tpu.experimental.initialize_tpu_system(tpu)
-        strategy = tf.distribute.TPUStrategy(tpu)
-        print("Running on TPU:", tpu.cluster_spec().as_dict()["worker"])
+        # Create a TPUClusterResolver
+        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='local')
+        print(f"Found TPU at: {resolver.master()}")
+
+        # Connect to the TPU cluster
+        tf.config.experimental_connect_to_cluster(resolver)
+
+        # Initialize the TPU system (must be at the beginning)
+        tf.tpu.experimental.initialize_tpu_system(resolver)
+        print("TPU system initialized successfully.")
+
+        # Print available TPU devices
+        print("All TPU devices:", tf.config.list_logical_devices('TPU'))
+
+        # Define TPU distribution strategy
+        strategy = tf.distribute.TPUStrategy(resolver)
+        print(f"Number of TPU cores: {strategy.num_replicas_in_sync}")
         return strategy
     except ValueError:
         print("TPU not found. Checking for GPUs...")
