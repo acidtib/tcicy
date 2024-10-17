@@ -174,7 +174,7 @@ callbacks = [
     TensorBoard(log_dir=log_dir, histogram_freq=1)
 ]
 
-epochs = 100
+epochs = 400
 print("Starting training...")
 history = model.fit(
     train_generator,
@@ -203,7 +203,7 @@ print("Starting fine-tuning...")
 history_fine = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=50,
+    epochs=75,
     callbacks=callbacks
 )
 
