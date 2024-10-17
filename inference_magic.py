@@ -39,7 +39,7 @@ def load_class_names(data_dir):
 if __name__ == "__main__":
     model_path = 'models/tcg_magic/classifier_fine_tuned.keras'
     data_dir = 'datasets/tcg_magic/data/train'
-    test_image_path = "datasets/tcg_magic/data/train/00adcfec_9893_48e7_b905_158eac5497f2.png"
+    test_image_path = "datasets/tcg_magic/data/test/0a00b8fa_b6fa_4717_9887_07c85cc10494.png"
     
     class_names = load_class_names(data_dir)
     

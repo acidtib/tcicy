@@ -11,10 +11,9 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 class CustomDataGenerator(tf.keras.utils.Sequence):
-    def __init__(self, directory, batch_size, image_size, shuffle=True, augment=False):
+    def __init__(self, directory, batch_size, shuffle=True, augment=False):
         self.directory = directory
         self.batch_size = batch_size
-        self.image_size = image_size
         self.shuffle = shuffle
         self.augment = augment
         self.image_files = [f for f in os.listdir(directory) if f.endswith('.png')]
@@ -31,7 +30,8 @@ class CustomDataGenerator(tf.keras.utils.Sequence):
                 shear_range=0.2,
                 zoom_range=0.2,
                 horizontal_flip=False,
-                fill_mode='nearest'
+                fill_mode='constant',
+                cval=0
             )
 
     def __len__(self):
@@ -54,18 +54,12 @@ class CustomDataGenerator(tf.keras.utils.Sequence):
     def load_image(self, path):
         img = tf.keras.preprocessing.image.load_img(path)
         img = tf.keras.preprocessing.image.img_to_array(img)
-
-        target_height, target_width = self.image_size
-        height, width, _ = img.shape
-
-        pad_height = max(0, target_height - height)
-        pad_width = max(0, target_width - width)
-
-        img = np.pad(img, ((pad_height // 2, pad_height - pad_height // 2), 
-                            (pad_width // 2, pad_width - pad_width // 2), 
-                            (0, 0)), mode='constant', constant_values=255)
-
-        img = tf.image.resize(img, self.image_size)
+        
+        # Ensure the image is in the correct format (224, 224, 3)
+        if img.shape != (224, 224, 3):
+            raise ValueError(f"Unexpected image shape: {img.shape}. Expected (224, 224, 3)")
+        
+        # Normalize the image
         img = img / 255.0
         return img
 
@@ -74,19 +68,12 @@ class CustomDataGenerator(tf.keras.utils.Sequence):
         for img in images:
             img = img.reshape((1,) + img.shape)
             for augmented_img in self.datagen.flow(img, batch_size=1):
-                target_height, target_width = self.image_size
                 augmented_img = augmented_img[0]
-                aug_height, aug_width, _ = augmented_img.shape
                 
-                pad_height = max(0, target_height - aug_height)
-                pad_width = max(0, target_width - aug_width)
-                augmented_img = np.pad(augmented_img, 
-                                        ((pad_height // 2, pad_height - pad_height // 2), 
-                                         (pad_width // 2, pad_width - pad_width // 2), 
-                                         (0, 0)), 
-                                        mode='constant', constant_values=255)
+                # Preserve the original black padding
+                mask = (img[0] != 0).any(axis=2)
+                augmented_img[~mask] = 0
                 
-                augmented_img = tf.image.resize(augmented_img, self.image_size)
                 augmented_images.append(augmented_img)
                 break
         return np.array(augmented_images)
@@ -112,18 +99,18 @@ def save_augmented_visualization(images, generator, output_path):
     plt.close()
 
 def get_distribution_strategy():
-    try:
-        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='local')
-        print(f"Found TPU at: {resolver.master()}")
-        tf.config.experimental_connect_to_cluster(resolver)
-        tf.tpu.experimental.initialize_tpu_system(resolver)
-        print("TPU system initialized successfully.")
-        print("All TPU devices:", tf.config.list_logical_devices('TPU'))
-        strategy = tf.distribute.TPUStrategy(resolver)
-        print(f"Number of TPU cores: {strategy.num_replicas_in_sync}")
-        return strategy
-    except ValueError:
-        print("TPU not found. Checking for GPUs...")
+    # try:
+    #     resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='local')
+    #     print(f"Found TPU at: {resolver.master()}")
+    #     tf.config.experimental_connect_to_cluster(resolver)
+    #     tf.tpu.experimental.initialize_tpu_system(resolver)
+    #     print("TPU system initialized successfully.")
+    #     print("All TPU devices:", tf.config.list_logical_devices('TPU'))
+    #     strategy = tf.distribute.TPUStrategy(resolver)
+    #     print(f"Number of TPU cores: {strategy.num_replicas_in_sync}")
+    #     return strategy
+    # except ValueError:
+    #     print("TPU not found. Checking for GPUs...")
     
     gpus = tf.config.list_physical_devices('GPU')
     if len(gpus) > 1:
@@ -141,11 +128,10 @@ def get_distribution_strategy():
 strategy = get_distribution_strategy()
 
 data_dir = 'datasets/tcg_magic/data/train'
-image_size = (224, 224)
 batch_size = 32 * strategy.num_replicas_in_sync
 
-train_generator = CustomDataGenerator(data_dir, batch_size, image_size, augment=True)
-validation_generator = CustomDataGenerator(data_dir, batch_size, image_size)
+train_generator = CustomDataGenerator(data_dir, batch_size, augment=True)
+validation_generator = CustomDataGenerator(data_dir, batch_size)
 
 images, labels = train_generator.__getitem__(0)
 
@@ -162,17 +148,15 @@ def create_model(num_classes):
         base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
         x = base_model.output
         x = GlobalAveragePooling2D()(x)
-        x = Dense(1024, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
-        x = Dropout(0.5)(x)
-        x = Dense(512, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
-        x = Dropout(0.5)(x)
+        x = Dense(512, activation='relu')(x)
+        x = Dropout(0.3)(x)
         output = Dense(num_classes, activation='softmax')(x)
         model = Model(inputs=base_model.input, outputs=output)
         
         for layer in base_model.layers:
             layer.trainable = False
         
-        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
                       loss='categorical_crossentropy',
                       metrics=['accuracy'])
     return model
@@ -184,13 +168,13 @@ log_dir = "models/tcg_magic/logs/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 os.makedirs("models/tcg_magic/logs", exist_ok=True)
 
 callbacks = [
-    EarlyStopping(patience=10, restore_best_weights=True),
+    EarlyStopping(patience=15, restore_best_weights=True),
     ModelCheckpoint('models/tcg_magic/best_model.keras', save_best_only=True),
-    ReduceLROnPlateau(factor=0.1, patience=5),
+    ReduceLROnPlateau(factor=0.1, patience=5, min_lr=1e-6),
     TensorBoard(log_dir=log_dir, histogram_freq=1)
 ]
 
-epochs = 200
+epochs = 100
 print("Starting training...")
 history = model.fit(
     train_generator,
@@ -219,7 +203,7 @@ print("Starting fine-tuning...")
 history_fine = model.fit(
     train_generator,
     validation_data=validation_generator,
-    epochs=epochs,
+    epochs=50,
     callbacks=callbacks
 )
 
