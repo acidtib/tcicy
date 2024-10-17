@@ -23,6 +23,7 @@ PROCESS_IMAGES = True
 
 # Generate augmented images
 GENERATE_AUGMENTED = True
+AUGMENTED_AMOUNT = 19
 
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
@@ -154,7 +155,7 @@ def download_image(image_url, images_directory):
                 process_image(image_path)
                 
             if GENERATE_AUGMENTED:
-                generate_augmented_images(image_path, image_dir_path, total_number=20)
+                generate_augmented_images(image_path, image_dir_path, total_number=AUGMENTED_AMOUNT)
 
             return image_path
         else:
@@ -195,25 +196,23 @@ def process_image(image_path):
         with Image.open(image_path) as img:
             # Auto-orientation of pixel data (with EXIF-orientation stripping)
             img = ImageOps.exif_transpose(img)
-
-            # # Get the current dimensions
-            # width, height = img.size
             
-            # # Calculate padding to make the image square
-            # pad_width = (max(width, height) - img.width) // 2
-            # pad_height = (max(width, height) - img.height) // 2
+            # Create a new black background image
+            new_size = (320, 320)
+            new_img = Image.new("RGB", new_size, (0, 0, 0))
             
-            # # Pad to make it square
-            # img = ImageOps.expand(img, (pad_width, pad_height, pad_width, pad_height), fill=(0, 0, 0))  # Black padding
-
-            # # Resize to 224x224
-            # img = img.resize((224, 224), Image.LANCZOS)
+            # Resize the original image while maintaining aspect ratio
+            img.thumbnail((320, 320), Image.LANCZOS)
             
-            # Resize to 372.5 x 520
-            img = img.resize((373, 520), Image.LANCZOS)
-
+            # Calculate position to paste (center)
+            paste_position = ((new_size[0] - img.size[0]) // 2,
+                              (new_size[1] - img.size[1]) // 2)
+            
+            # Paste the resized image onto the black background
+            new_img.paste(img, paste_position)
+            
             # Save the processed image
-            img.save(image_path, optimize=True, quality=100)
+            new_img.save(image_path, optimize=True, quality=100)
     except Exception as e:
         tqdm.write(f"Error processing image: {image_path} - {e}")
             

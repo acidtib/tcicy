@@ -22,3 +22,4 @@ pillow
 scikit-learn
 numpy
 accelerate
+matplotlib
