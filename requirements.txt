@@ -1,13 +1,24 @@
-numpy
+# numpy
 
+# pillow
+
+# tensorflow[and-cuda] 
+
+# scikit-learn
+
+# tqdm
+
+# matplotlib
+
+# datasets
+
+transformers
+torch
+torchvision
+datasets 
+evaluate 
+tqdm 
 pillow
-
-tensorflow[and-cuda] 
-
 scikit-learn
-
-tqdm
-
-matplotlib
-
-datasets
+numpy
+accelerate

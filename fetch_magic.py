@@ -1,14 +1,19 @@
 import os
 import requests
 import json
+import numpy as np
+import random
+import shutil
 
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, save_img
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
 from concurrent.futures import ThreadPoolExecutor
 from PIL import Image, ImageOps
 from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = None
+MAX_IMAGES_PER_FILE = 400
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
@@ -16,11 +21,14 @@ NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
 # Resize and Pad Images
 PROCESS_IMAGES = True
 
+# Generate augmented images
+GENERATE_AUGMENTED = True
+
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
     # 203 MB
     # "unique_artwork", 
-
+ 
     # 146 MB
     # "oracle_cards",
 
@@ -31,6 +39,73 @@ BULK_DATA_TYPES = [
     # "all_cards"
 ]
 
+def setup_test_data(train_dir, test_dir, test_split=0.05):
+    print("Setting up test data...")
+    print(f"Train directory: {train_dir}")
+    print(f"Test directory: {test_dir}")
+    
+    # Ensure the test directory exists
+    os.makedirs(test_dir, exist_ok=True)
+    
+    # Get all subdirectories in the train directory
+    subdirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))]
+    print(f"Found {len(subdirs)} subdirectories in train directory")
+    
+    # Calculate the number of directories to copy
+    num_test = max(1, int(len(subdirs) * test_split))  # Ensure at least 1 directory is copied
+    print(f"Will copy {num_test} directories")
+    
+    if not subdirs:
+        print("No subdirectories found in train directory. Nothing to copy.")
+        return
+    
+    # Randomly select directories to copy
+    test_dirs = random.sample(subdirs, num_test)
+    
+    # Copy selected directories to test
+    for dir_name in tqdm(test_dirs, desc="Copying to test"):
+        src = os.path.join(train_dir, dir_name)
+        dst = os.path.join(test_dir, dir_name)
+        shutil.copytree(src, dst)
+    
+    print(f"Copied {num_test} directories to test set.")
+    
+def generate_augmented_images(img_path, save_dir, total_number=10):
+    # ImageDataGenerator configuration
+    data_gen = ImageDataGenerator(
+        rotation_range=10,          # Limit rotation to prevent excessive skewing
+        width_shift_range=0.05,     # Slight shifts
+        height_shift_range=0.05,    
+        shear_range=0.0,            # Disable shearing to maintain aspect ratio
+        zoom_range=[0.95, 1.05],    # Keep zoom minimal to prevent excessive distortion
+        horizontal_flip=True,       # Keep this if cards are symmetrical
+        fill_mode='constant',       # Keep the background constant when shifting/rotating
+        cval=0                      # Set the background color (for shifted parts) to black or a suitable constant
+    )
+
+    # Load image and convert it to a tensor
+    img = load_img(img_path, color_mode='rgb')
+    arr = img_to_array(img)
+    tensor_image = arr.reshape((1, ) + arr.shape)
+
+    # Create save directory if not exists
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # Generate augmented images and save in order
+    for i in range(total_number):
+        # Generate a batch
+        batch = next(data_gen.flow(x=tensor_image, batch_size=1))
+        
+        # Ensure the output retains the original size to prevent stretching
+        batch[0] = np.clip(batch[0], 0, 255).astype(np.uint8)
+
+        # Construct a filename with four leading zeros
+        file_name = f"{save_dir}/{i+1:04d}.png"
+        
+        # Save the current image
+        save_img(file_name, batch[0])  # Saving the generated image
+        
 def download_json_data(type, download_uri, directory):
     filename = f"{directory}/{type}.json"
     
@@ -53,10 +128,17 @@ def download_json_data(type, download_uri, directory):
 
 def download_image(image_url, images_directory):
     # Extract the image filename from the URL
-    image_name = os.path.basename(image_url)
+    original_image_name = os.path.basename(image_url)
     # Replace - with _ in the image filename
-    image_name = image_name.replace('-', '_')
-    image_path = os.path.join(images_directory, image_name)
+    original_image_name = original_image_name.replace('-', '_')
+    
+    # Create a directory with the same name as the original image (without extension)
+    image_dir_name = os.path.splitext(original_image_name)[0]
+    image_dir_path = os.path.join(images_directory, image_dir_name)
+    os.makedirs(image_dir_path, exist_ok=True)
+    
+    # Set the full path for the image file, now named 0000.png
+    image_path = os.path.join(image_dir_path, '0000.png')
 
     # Check if the image file already exists
     if os.path.exists(image_path):
@@ -70,6 +152,9 @@ def download_image(image_url, images_directory):
 
             if PROCESS_IMAGES:
                 process_image(image_path)
+                
+            if GENERATE_AUGMENTED:
+                generate_augmented_images(image_path, image_dir_path, total_number=20)
 
             return image_path
         else:
@@ -111,18 +196,21 @@ def process_image(image_path):
             # Auto-orientation of pixel data (with EXIF-orientation stripping)
             img = ImageOps.exif_transpose(img)
 
-            # Get the current dimensions
-            width, height = img.size
+            # # Get the current dimensions
+            # width, height = img.size
             
-            # Calculate padding to make the image square
-            pad_width = (max(width, height) - img.width) // 2
-            pad_height = (max(width, height) - img.height) // 2
+            # # Calculate padding to make the image square
+            # pad_width = (max(width, height) - img.width) // 2
+            # pad_height = (max(width, height) - img.height) // 2
             
-            # Pad to make it square
-            img = ImageOps.expand(img, (pad_width, pad_height, pad_width, pad_height), fill=(0, 0, 0))  # Black padding
+            # # Pad to make it square
+            # img = ImageOps.expand(img, (pad_width, pad_height, pad_width, pad_height), fill=(0, 0, 0))  # Black padding
 
-            # Resize to 224x224
-            img = img.resize((224, 224), Image.LANCZOS)
+            # # Resize to 224x224
+            # img = img.resize((224, 224), Image.LANCZOS)
+            
+            # Resize to 372.5 x 520
+            img = img.resize((373, 520), Image.LANCZOS)
 
             # Save the processed image
             img.save(image_path, optimize=True, quality=100)
@@ -145,6 +233,8 @@ def main():
     os.makedirs(directory, exist_ok=True)
     images_directory = f"{directory}/data/train"
     os.makedirs(images_directory, exist_ok=True)
+    test_directory = f"{directory}/data/test"
+    os.makedirs(test_directory, exist_ok=True)
 
     # Check if all required JSON files exist
     required_json_files = [f"{directory}/{type}.json" for type in BULK_DATA_TYPES]
@@ -188,6 +278,9 @@ def main():
     for json_file in json_files:
         if json_file:  # If the download was successful
             download_images_from_json(json_file, images_directory)
+            
+    # Setup test data
+    setup_test_data(images_directory, test_directory)
 
 if __name__ == "__main__":
     main()
