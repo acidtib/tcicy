@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 400
+MAX_IMAGES_PER_FILE = 420
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
@@ -23,7 +23,7 @@ PROCESS_IMAGES = True
 
 # Generate augmented images
 GENERATE_AUGMENTED = True
-AUGMENTED_AMOUNT = 19
+AUGMENTED_AMOUNT = 49
 
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
@@ -40,7 +40,7 @@ BULK_DATA_TYPES = [
     # "all_cards"
 ]
 
-def setup_test_data(train_dir, test_dir, test_split=0.05):
+def setup_test_data(train_dir, test_dir):
     print("Setting up test data...")
     print(f"Train directory: {train_dir}")
     print(f"Test directory: {test_dir}")
@@ -52,24 +52,27 @@ def setup_test_data(train_dir, test_dir, test_split=0.05):
     subdirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))]
     print(f"Found {len(subdirs)} subdirectories in train directory")
     
-    # Calculate the number of directories to copy
-    num_test = max(1, int(len(subdirs) * test_split))  # Ensure at least 1 directory is copied
-    print(f"Will copy {num_test} directories")
-    
     if not subdirs:
         print("No subdirectories found in train directory. Nothing to copy.")
         return
     
-    # Randomly select directories to copy
-    test_dirs = random.sample(subdirs, num_test)
-    
-    # Copy selected directories to test
-    for dir_name in tqdm(test_dirs, desc="Copying to test"):
+    # Copy all directories to test, but only 5 images from each
+    for dir_name in tqdm(subdirs, desc="Copying to test"):
         src = os.path.join(train_dir, dir_name)
         dst = os.path.join(test_dir, dir_name)
-        shutil.copytree(src, dst)
+        os.makedirs(dst, exist_ok=True)
+        
+        # Get all image files in the source directory
+        image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        
+        # Select up to 5 images to copy
+        images_to_copy = image_files[:5] if len(image_files) > 5 else image_files
+        
+        # Copy the selected images
+        for image in images_to_copy:
+            shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
     
-    print(f"Copied {num_test} directories to test set.")
+    print(f"Copied all {len(subdirs)} directories to test set, copying up to 5 images in each.")
     
 def generate_augmented_images(img_path, save_dir, total_number=10):
     # ImageDataGenerator configuration
@@ -198,11 +201,11 @@ def process_image(image_path):
             img = ImageOps.exif_transpose(img)
             
             # Create a new black background image
-            new_size = (320, 320)
+            new_size = (224, 224)
             new_img = Image.new("RGB", new_size, (0, 0, 0))
             
             # Resize the original image while maintaining aspect ratio
-            img.thumbnail((320, 320), Image.LANCZOS)
+            img.thumbnail((224, 224), Image.LANCZOS)
             
             # Calculate position to paste (center)
             paste_position = ((new_size[0] - img.size[0]) // 2,
@@ -212,7 +215,7 @@ def process_image(image_path):
             new_img.paste(img, paste_position)
             
             # Save the processed image
-            new_img.save(image_path, optimize=True, quality=100)
+            new_img.save(image_path, optimize=True, quality=95)
     except Exception as e:
         tqdm.write(f"Error processing image: {image_path} - {e}")
             

@@ -1,23 +1,4 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# ## Install dependencies
-
-# In[ ]:
-
-
-get_ipython().system('pip install transformers')
-get_ipython().system('pip install datasets')
-get_ipython().system('pip install evaluate')
-get_ipython().system('pip install accelerate')
-get_ipython().system('pip install pillow')
-get_ipython().system('pip install torchvision')
-get_ipython().system('pip install scikit-learn')
-
-
-# In[2]:
-
-
+import json
 import torch
 from torch import nn
 from torch.utils.data import Dataset, DataLoader
@@ -27,22 +8,19 @@ from tqdm import tqdm
 from datasets import load_dataset
 import os
 from PIL import Image
-
-
-# ## Login to Hugging Face Hub
-
-# In[3]:
-
-
-from huggingface_hub import notebook_login
-
-notebook_login()
+import matplotlib.pyplot as plt
+import random
+import tensorrt
+import joblib
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from torchvision.models import ResNet50_Weights
 
 
 # ### 1. Prepare the dataset
-
-# In[4]:
-
+def encode_labels(all_labels):
+    le = LabelEncoder()
+    return le.fit_transform(all_labels), le
 
 def prepare_data(cards):
     train_data = cards['train']
@@ -54,19 +32,23 @@ def prepare_data(cards):
     test_images = test_data['image']
     test_labels = test_data['label']
     
-    # Encode labels
-    le = LabelEncoder()
-    train_labels_encoded = le.fit_transform(train_labels)
-    test_labels_encoded = le.transform(test_labels)
+    # Combine train and test labels for encoding
+    all_labels = train_labels + test_labels  # Assuming labels are lists
+    
+    # Encode labels using multi-threading
+    with ThreadPoolExecutor() as executor:
+        future = executor.submit(encode_labels, all_labels)
+        labels_encoded, le = future.result()
+    
+    # Split the encoded labels back into train and test sets
+    n_train = len(train_labels)
+    train_labels_encoded = labels_encoded[:n_train]
+    test_labels_encoded = labels_encoded[n_train:]
     
     return train_images, train_labels_encoded, test_images, test_labels_encoded, le
 
 
 # ### 2. Create a custom dataset class
-
-# In[5]:
-
-
 class MTGDataset(Dataset):
     def __init__(self, images, labels, transform=None):
         self.images = images
@@ -92,12 +74,8 @@ class MTGDataset(Dataset):
 
 
 # ### 3. Set up model architecture
-
-# In[6]:
-
-
 def get_model(num_classes):
-    model = models.resnet50(pretrained=True)
+    model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
     for param in model.parameters():
         param.requires_grad = False
     model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -105,12 +83,9 @@ def get_model(num_classes):
 
 
 # ### 4. Training loop
-
-# In[7]:
-
-
 def train_model(model, train_loader, val_loader, criterion, optimizer, num_epochs=10):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = nn.DataParallel(model)  # Wrap model with DataParallel
     model.to(device)
 
     for epoch in range(num_epochs):
@@ -148,34 +123,50 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, num_epoch
     return model
 
 
+def show_images(dataset, label_encoder, num_images=5, images_per_row=2):
+    rows = (num_images + images_per_row - 1) // images_per_row  # Calculate the number of rows needed
+    plt.figure(figsize=(images_per_row * 4, rows * 4))
+    
+    # Randomly pick distinct indices from the dataset
+    random_indices = random.sample(range(len(dataset)), num_images)
+    
+    for i, idx in enumerate(random_indices):
+        image, label = dataset[idx]
+        image = image.permute(1, 2, 0)  # Change dimensions to HWC for plotting
+        image = image * torch.tensor([0.229, 0.224, 0.225]) + torch.tensor([0.485, 0.456, 0.406])  # Unnormalize
+        image = image.clip(0, 1)  # Clip values to be between 0 and 1
+
+        ax = plt.subplot(rows, images_per_row, i + 1)
+        ax.imshow(image)
+        ax.set_title(f"Label: {label_encoder.classes_[label]}", fontsize=10)  # Keep label size the same
+        ax.axis('off')
+
+    # Adjust the spacing between subplots
+    plt.subplots_adjust(hspace=0.5, wspace=0.5)  # Adjust these values as needed for spacing
+    plt.tight_layout()
+    # plt.show()
+    # Save the image to a file
+    plt.savefig("models/tcg_magic/examples.png", dpi=300, bbox_inches="tight")
+    plt.close()
+
+
 # # Main execution
-
-# In[8]:
-
-
 # Load the dataset
-cards = load_dataset("acidtib/tcg-magic")
-
-
-# In[9]:
+print("Loading dataset...")
+# cards = load_dataset("acidtib/tcg-magic")
+cards = load_dataset("imagefolder", data_dir="datasets/tcg_magic/data")
 
 
 # Prepare data
+print("Preparing data...")
 train_images, train_labels, test_images, test_labels, label_encoder = prepare_data(cards)
-
-
-# In[23]:
-
 
 # Define transforms
 transform = transforms.Compose([
-    transforms.Resize((224, 224)),
+    # transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
-
-
-# In[24]:
 
 
 # Create datasets
@@ -183,23 +174,20 @@ train_dataset = MTGDataset(train_images, train_labels, transform=transform)
 test_dataset = MTGDataset(test_images, test_labels, transform=transform)
 
 
-# In[25]:
-
-
 # Create data loaders
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 
-# In[ ]:
+# Show some training images
+show_images(train_dataset, label_encoder, num_images=4)
 
 
 # Initialize model
 num_classes = len(label_encoder.classes_)
 model = get_model(num_classes)
 
-
-# In[27]:
+print("Number of classes:", num_classes)
 
 
 # Define loss function and optimizer
@@ -207,24 +195,29 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.fc.parameters(), lr=0.001)
 
 
-# In[ ]:
-
-
 # Train the model
-trained_model = train_model(model, train_loader, test_loader, criterion, optimizer)
-
-
-# In[29]:
+trained_model = train_model(
+    model, 
+    train_loader, 
+    test_loader, 
+    criterion, 
+    optimizer,
+    num_epochs=15
+)
 
 
 # Save the model
-torch.save(trained_model.state_dict(), 'mtg_card_classifier.pth')
-
-
-# In[ ]:
-
+model_path = 'models/tcg_magic/classifier.pth'
+torch.save(trained_model.state_dict(), model_path)
 
 # Save the label encoder
-import joblib
-joblib.dump(label_encoder, 'label_encoder.joblib')
+joblib.dump(label_encoder, 'models/tcg_magic/labels.joblib')
 
+# Save configuration
+config = {
+    "num_classes": num_classes,
+    "label_encoder": label_encoder.classes_.tolist()
+}
+
+with open('models/tcg_magic/config.json', 'w') as f:
+    json.dump(config, f)

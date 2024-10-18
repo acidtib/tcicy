@@ -1,18 +1,4 @@
-# numpy
-
-# pillow
-
-# tensorflow[and-cuda] 
-
-# scikit-learn
-
-# tqdm
-
-# matplotlib
-
-# datasets
-
-transformers
+git+https://github.com/huggingface/transformers
 torch
 torchvision
 datasets 
@@ -23,3 +9,5 @@ scikit-learn
 numpy
 accelerate
 matplotlib
+tf-keras
+tensorrt

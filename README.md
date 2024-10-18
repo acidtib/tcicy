@@ -1,33 +1,24 @@
-# TCG Card Scanner Experimental Repository
 
-## Current Status
 
-Experimental/Development
-
-## Note
-
-This repository is a learning project, and the code is not intended for production use. It is a collection of experiments and proof-of-concepts.
-
-## Components
-
-* `fetch_magic.rb`: A script to download the training dataset for Magic: The Gathering cards.
-* (Future plans) Model training and prediction scripts using TensorFlow and Keras.
-
-## Requirements
-
-* Ruby (for the `fetch_magic.rb` script)
-* TensorFlow and Keras (for future model training and prediction scripts)
-
-## Usage
-
-1. Run `fetch_magic.rb` to download the training dataset.
-2. (Future plans) Train the model using the downloaded dataset.
-3. (Future plans) Use the trained model to make predictions and gather information about TCG cards.
-
-## Contributions
-
-Contributions are welcome, but please note that this is an experimental repository. If you'd like to contribute, please open an issue or submit a pull request.
-
-## Disclaimer
-
-This repository is for educational purposes only. The code and data are provided "as is" without warranty of any kind.
+```
+python run_image_classification.py \
+    --dataset_name acidtib/tcg-magic \
+    --output_dir ./models/tcg_magic/ \
+    --push_to_hub \
+    --push_to_hub_model_id tcg-magic-cards \
+    --remove_unused_columns False \
+    --label_column_name label \
+    --do_train \
+    --do_eval \
+    --learning_rate 2e-5 \
+    --num_train_epochs 10 \
+    --per_device_train_batch_size 8 \
+    --per_device_eval_batch_size 8 \
+    --logging_strategy steps \
+    --logging_steps 10 \
+    --eval_strategy epoch \
+    --save_strategy epoch \
+    --load_best_model_at_end True \
+    --save_total_limit 3 \
+    --seed 420
+```
