@@ -1,4 +1,5 @@
 import os
+from matplotlib.pyplot import bar
 import requests
 import json
 import numpy as np
@@ -13,7 +14,7 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 10
+MAX_IMAGES_PER_FILE = None
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
@@ -23,7 +24,7 @@ PROCESS_IMAGES = True
 
 # Generate augmented images
 GENERATE_AUGMENTED = True
-AUGMENTED_AMOUNT = 29
+AUGMENTED_AMOUNT = 19
 
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
@@ -60,19 +61,68 @@ def setup_test_data(train_dir, test_dir):
     for dir_name in tqdm(subdirs, desc="Copying to test"):
         src = os.path.join(train_dir, dir_name)
         dst = os.path.join(test_dir, dir_name)
-        os.makedirs(dst, exist_ok=True)
+        
+        # Initialize existing_images as an empty list
+        existing_images = []
+        
+        # Check if the destination directory already exists
+        if os.path.exists(dst):
+            existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if len(existing_images) >= 5:
+                continue
+        else:
+            os.makedirs(dst)
         
         # Get all image files in the source directory
         image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-        
-        # Select up to 5 images to copy
-        images_to_copy = image_files[:5] if len(image_files) > 5 else image_files
-        
+
+        # Select up to 5 images to copy, excluding any that already exist in dst
+        images_to_copy = [img for img in image_files[:5] if img not in existing_images]
+
         # Copy the selected images
         for image in images_to_copy:
             shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
     
     print(f"Copied all {len(subdirs)} directories to test set, copying up to 5 images in each.")
+
+def setup_validation_data(train_dir, valid_dir):
+    print("Setting up validation data...")
+    print(f"Train directory: {train_dir}")
+    print(f"Validation directory: {valid_dir}")
+    
+    # Ensure the validation directory exists
+    os.makedirs(valid_dir, exist_ok=True)
+    
+    # Get all subdirectories in the train directory
+    subdirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))]
+    print(f"Found {len(subdirs)} subdirectories in train directory")
+    
+    if not subdirs:
+        print("No subdirectories found in train directory. Nothing to copy.")
+        return
+    
+    # Copy all directories to valid, but only 1 image from each
+    for dir_name in tqdm(subdirs, desc="Copying to validation"):
+        src = os.path.join(train_dir, dir_name)
+        dst = os.path.join(valid_dir, dir_name)
+        
+        # Check if the destination directory already exists
+        if os.path.exists(dst):
+            existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+            if len(existing_images) >= 1:
+                continue
+        else:
+            os.makedirs(dst)
+        
+        # Get all image files in the source directory
+        image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+        # Select 1 image to copy
+        if image_files:
+            image_to_copy = image_files[0]
+            shutil.copy2(os.path.join(src, image_to_copy), os.path.join(dst, image_to_copy))
+    
+    print(f"Copied 1 image from each of the {len(subdirs)} directories to validation set.")
     
 def generate_augmented_images(img_path, save_dir, total_number=10):
     img_path = img_path.replace(".png", ".jpg")
@@ -145,8 +195,8 @@ def download_image(image_url, images_directory):
     # Set the full path for the image file, now named 0000.png
     image_path = os.path.join(image_dir_path, '0000.png')
 
-    # Check if the image file already exists
-    if os.path.exists(image_path):
+    # Check if the image file already exists and skip if it does
+    if os.path.exists(image_path.replace(".png", ".jpg")):
         return image_path
 
     try:
@@ -189,7 +239,7 @@ def download_images_from_json(json_file, images_directory):
         # Use tqdm to create a progress bar
         for image_path, card_id, card_name in zip(tqdm(executor.map(lambda url: download_image(clean_url(url), images_directory), image_urls), total=len(image_urls)), card_ids, card_names):
             if image_path:
-                tqdm.write(f"Processed: {image_path}")
+                tqdm.write(f"Processed: {card_id} - {card_name}")
 
 def clean_url(url):
     return url.split('?')[0]
@@ -202,11 +252,11 @@ def process_image(image_path):
             img = ImageOps.exif_transpose(img)
             
             # Create a new black background image
-            new_size = (448, 448)
+            new_size = (298, 298)
             new_img = Image.new("RGB", new_size, (0, 0, 0))
             
             # # Resize the original image while maintaining aspect ratio
-            img.thumbnail((448, 448), Image.LANCZOS)
+            img.thumbnail((298, 298), Image.LANCZOS)
             
             # # Calculate position to paste (center)
             paste_position = ((new_size[0] - img.size[0]) // 2,
@@ -239,12 +289,15 @@ def main():
     print(f"Fetching {', '.join(BULK_DATA_TYPES)} from Scryfall")
     
     # Create the directory if it doesn't exist
-    directory = 'datasets/tcg_magic'
+    # directory = 'datasets/tcg_magic'
+    directory = '/media/acid/turtle/datasets/tcg_magic'
     os.makedirs(directory, exist_ok=True)
     images_directory = f"{directory}/data/train"
     os.makedirs(images_directory, exist_ok=True)
     test_directory = f"{directory}/data/test"
     os.makedirs(test_directory, exist_ok=True)
+    valid_directory = f"{directory}/data/valid"
+    os.makedirs(valid_directory, exist_ok=True)
 
     # Check if all required JSON files exist
     required_json_files = [f"{directory}/{type}.json" for type in BULK_DATA_TYPES]
@@ -291,6 +344,9 @@ def main():
             
     # Setup test data
     setup_test_data(images_directory, test_directory)
+    
+    # Setup validation data
+    setup_validation_data(images_directory, valid_directory)
 
 if __name__ == "__main__":
     main()
