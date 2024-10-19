@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 420
+MAX_IMAGES_PER_FILE = 10
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() * 2 if os.cpu_count() is not None else 2
@@ -23,7 +23,7 @@ PROCESS_IMAGES = True
 
 # Generate augmented images
 GENERATE_AUGMENTED = True
-AUGMENTED_AMOUNT = 49
+AUGMENTED_AMOUNT = 29
 
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
@@ -75,6 +75,7 @@ def setup_test_data(train_dir, test_dir):
     print(f"Copied all {len(subdirs)} directories to test set, copying up to 5 images in each.")
     
 def generate_augmented_images(img_path, save_dir, total_number=10):
+    img_path = img_path.replace(".png", ".jpg")
     # ImageDataGenerator configuration
     data_gen = ImageDataGenerator(
         rotation_range=10,          # Limit rotation to prevent excessive skewing
@@ -82,7 +83,7 @@ def generate_augmented_images(img_path, save_dir, total_number=10):
         height_shift_range=0.05,    
         shear_range=0.0,            # Disable shearing to maintain aspect ratio
         zoom_range=[0.95, 1.05],    # Keep zoom minimal to prevent excessive distortion
-        horizontal_flip=True,       # Keep this if cards are symmetrical
+        horizontal_flip=False,       # Keep this if cards are symmetrical
         fill_mode='constant',       # Keep the background constant when shifting/rotating
         cval=0                      # Set the background color (for shifted parts) to black or a suitable constant
     )
@@ -105,7 +106,7 @@ def generate_augmented_images(img_path, save_dir, total_number=10):
         batch[0] = np.clip(batch[0], 0, 255).astype(np.uint8)
 
         # Construct a filename with four leading zeros
-        file_name = f"{save_dir}/{i+1:04d}.png"
+        file_name = f"{save_dir}/{i+1:04d}.jpg"
         
         # Save the current image
         save_img(file_name, batch[0])  # Saving the generated image
@@ -201,21 +202,28 @@ def process_image(image_path):
             img = ImageOps.exif_transpose(img)
             
             # Create a new black background image
-            new_size = (224, 224)
+            new_size = (448, 448)
             new_img = Image.new("RGB", new_size, (0, 0, 0))
             
-            # Resize the original image while maintaining aspect ratio
-            img.thumbnail((224, 224), Image.LANCZOS)
+            # # Resize the original image while maintaining aspect ratio
+            img.thumbnail((448, 448), Image.LANCZOS)
             
-            # Calculate position to paste (center)
+            # # Calculate position to paste (center)
             paste_position = ((new_size[0] - img.size[0]) // 2,
                               (new_size[1] - img.size[1]) // 2)
             
             # Paste the resized image onto the black background
             new_img.paste(img, paste_position)
             
+            # Create the new file path with .jpg extension
+            base_name = os.path.splitext(image_path)[0]
+            new_image_path = base_name + ".jpg"
+            
             # Save the processed image
-            new_img.save(image_path, optimize=True, quality=95)
+            new_img.save(new_image_path, format="JPEG", optimize=True, quality=95)
+            
+            # Remove the original image
+            os.remove(image_path)
     except Exception as e:
         tqdm.write(f"Error processing image: {image_path} - {e}")
             
