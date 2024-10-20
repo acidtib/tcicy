@@ -8,7 +8,7 @@ import shutil
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator, save_img
 from tensorflow.keras.preprocessing.image import load_img, img_to_array
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image, ImageOps
 from tqdm import tqdm
 
@@ -41,6 +41,30 @@ BULK_DATA_TYPES = [
     # "all_cards"
 ]
 
+def copy_images_to_test(src, dst):
+    # Initialize existing_images as an empty list
+    existing_images = []
+    
+    # Check if the destination directory already exists
+    if os.path.exists(dst):
+        existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if len(existing_images) >= 5:
+            return 0  # Skip if there are already 5 or more images
+    else:
+        os.makedirs(dst)
+    
+    # Get all image files in the source directory
+    image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    # Select up to 5 images to copy, excluding any that already exist in dst
+    images_to_copy = [img for img in image_files[:5] if img not in existing_images]
+
+    # Copy the selected images
+    for image in images_to_copy:
+        shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
+
+    return len(images_to_copy)
+
 def setup_test_data(train_dir, test_dir):
     print("Setting up test data...")
     print(f"Train directory: {train_dir}")
@@ -57,33 +81,45 @@ def setup_test_data(train_dir, test_dir):
         print("No subdirectories found in train directory. Nothing to copy.")
         return
     
-    # Copy all directories to test, but only 5 images from each
-    for dir_name in tqdm(subdirs, desc="Copying to test"):
-        src = os.path.join(train_dir, dir_name)
-        dst = os.path.join(test_dir, dir_name)
+    # Use ThreadPoolExecutor to copy images in parallel
+    with ThreadPoolExecutor() as executor:
+        # Create a list to keep track of futures
+        futures = []
         
-        # Initialize existing_images as an empty list
-        existing_images = []
+        # Submit tasks to the executor for each subdirectory
+        for dir_name in subdirs:
+            src = os.path.join(train_dir, dir_name)
+            dst = os.path.join(test_dir, dir_name)
+            futures.append(executor.submit(copy_images_to_test, src, dst))
         
-        # Check if the destination directory already exists
-        if os.path.exists(dst):
-            existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if len(existing_images) >= 5:
-                continue
-        else:
-            os.makedirs(dst)
-        
-        # Get all image files in the source directory
-        image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        # Process the futures as they complete
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to test"):
+            try:
+                result = future.result()
+            except Exception as e:
+                print(f"Error copying images: {e}")
 
-        # Select up to 5 images to copy, excluding any that already exist in dst
-        images_to_copy = [img for img in image_files[:5] if img not in existing_images]
-
-        # Copy the selected images
-        for image in images_to_copy:
-            shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
-    
     print(f"Copied all {len(subdirs)} directories to test set, copying up to 5 images in each.")
+
+
+def copy_image_to_validation(src, dst):
+    # Check if the destination directory already exists
+    if os.path.exists(dst):
+        existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        if len(existing_images) >= 1:
+            return 0  # Skip if there's already an image
+    else:
+        os.makedirs(dst)
+    
+    # Get all image files in the source directory
+    image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    # Select 1 image to copy
+    if image_files:
+        image_to_copy = image_files[0]
+        shutil.copy2(os.path.join(src, image_to_copy), os.path.join(dst, image_to_copy))
+        return 1
+    return 0
 
 def setup_validation_data(train_dir, valid_dir):
     print("Setting up validation data...")
@@ -101,28 +137,26 @@ def setup_validation_data(train_dir, valid_dir):
         print("No subdirectories found in train directory. Nothing to copy.")
         return
     
-    # Copy all directories to valid, but only 1 image from each
-    for dir_name in tqdm(subdirs, desc="Copying to validation"):
-        src = os.path.join(train_dir, dir_name)
-        dst = os.path.join(valid_dir, dir_name)
+    # Use ThreadPoolExecutor to copy images in parallel
+    with ThreadPoolExecutor() as executor:
+        # Create a list to keep track of futures
+        futures = []
         
-        # Check if the destination directory already exists
-        if os.path.exists(dst):
-            existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-            if len(existing_images) >= 1:
-                continue
-        else:
-            os.makedirs(dst)
+        # Submit tasks to the executor for each subdirectory
+        for dir_name in subdirs:
+            src = os.path.join(train_dir, dir_name)
+            dst = os.path.join(valid_dir, dir_name)
+            futures.append(executor.submit(copy_image_to_validation, src, dst))
         
-        # Get all image files in the source directory
-        image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+        # Process the futures as they complete
+        copied_count = 0
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to validation"):
+            try:
+                copied_count += future.result()
+            except Exception as e:
+                print(f"Error copying image: {e}")
 
-        # Select 1 image to copy
-        if image_files:
-            image_to_copy = image_files[0]
-            shutil.copy2(os.path.join(src, image_to_copy), os.path.join(dst, image_to_copy))
-    
-    print(f"Copied 1 image from each of the {len(subdirs)} directories to validation set.")
+    print(f"Copied {copied_count} images from {len(subdirs)} directories to validation set.")
     
 def generate_augmented_images(img_path, save_dir, total_number=10):
     img_path = img_path.replace(".png", ".jpg")

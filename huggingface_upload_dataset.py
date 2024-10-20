@@ -6,9 +6,9 @@ from huggingface_hub import login
 dataset = load_dataset("imagefolder", 
                        data_dir="/media/acid/turtle/datasets/tcg_magic/data",
                        split={
-                         "train": "train", 
-                         "test": "test", 
-                         "valid": "validation"
+                         "train": "train[:1000]", 
+                         "test": "test[:1000]", 
+                         "valid": "validation[:1000]"
                         })
 
 # Print the number of examples in each split
