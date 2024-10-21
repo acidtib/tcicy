@@ -2,7 +2,6 @@ import os
 import requests
 import numpy as np
 import orjson
-import random
 import shutil
 
 from tensorflow.keras.preprocessing.image import ImageDataGenerator, save_img, load_img, img_to_array
@@ -201,6 +200,115 @@ def generate_augmented_images(img_path, save_dir, total_number=5):
         save_img(file_name, batch[0])  # Saving the generated image
     
     return True  # Images generated, return True to indicate success
+
+# Utility function to copy up to 4 images to test directory
+def copy_images_to_test(src, dst):
+    # Initialize existing_images as an empty list
+    existing_images = []
+    
+    ensure_directory_exists(dst)
+    
+    existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    if len(existing_images) >= 4:
+        return 0  # Skip if there are already 4 or more images
+    
+    # Get all image files in the source directory
+    image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    # Select up to 4 images to copy, excluding any that already exist in dst
+    images_to_copy = [img for img in image_files[:4] if img not in existing_images]
+
+    # Copy the selected images
+    for image in images_to_copy:
+        shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
+
+    return len(images_to_copy)
+
+# Utility function to set up test data
+def setup_test_data(train_dir, test_dir):
+    print("Setting up test data...")
+    print(f"Train directory: {train_dir}")
+    print(f"Test directory: {test_dir}")
+    
+    # Get all subdirectories in the train directory
+    subdirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))]
+    print(f"Found {len(subdirs)} subdirectories in train directory")
+    
+    if not subdirs:
+        print("No subdirectories found in train directory. Nothing to copy.")
+        return
+    
+    # Use ThreadPoolExecutor to copy images in parallel
+    with ThreadPoolExecutor() as executor:
+        # Create a list to keep track of futures
+        futures = []
+        
+        # Submit tasks to the executor for each subdirectory
+        for dir_name in subdirs:
+            src = os.path.join(train_dir, dir_name)
+            dst = os.path.join(test_dir, dir_name)
+            futures.append(executor.submit(copy_images_to_test, src, dst))
+        
+        # Process the futures as they complete
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to test"):
+            try:
+                result = future.result()
+            except Exception as e:
+                print(f"Error copying images: {e}")
+
+    print(f"Copied all {len(subdirs)} directories to test set, copying up to 4 images in each.")
+
+def copy_image_to_validation(src, dst):
+    ensure_directory_exists(dst)
+        
+    existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    if len(existing_images) >= 1:
+        return 0  # Skip if there's already an image
+    
+    # Get all image files in the source directory
+    image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+    # Select 1 image to copy
+    if image_files:
+        image_to_copy = image_files[0]
+        shutil.copy2(os.path.join(src, image_to_copy), os.path.join(dst, image_to_copy))
+        return 1
+    return 0
+
+def setup_validation_data(train_dir, valid_dir):
+    print("Setting up validation data...")
+    print(f"Train directory: {train_dir}")
+    print(f"Validation directory: {valid_dir}")
+    
+    # Get all subdirectories in the train directory
+    subdirs = [d for d in os.listdir(train_dir) if os.path.isdir(os.path.join(train_dir, d))]
+    print(f"Found {len(subdirs)} subdirectories in train directory")
+    
+    if not subdirs:
+        print("No subdirectories found in train directory. Nothing to copy.")
+        return
+    
+    # Use ThreadPoolExecutor to copy images in parallel
+    with ThreadPoolExecutor() as executor:
+        # Create a list to keep track of futures
+        futures = []
+        
+        # Submit tasks to the executor for each subdirectory
+        for dir_name in subdirs:
+            src = os.path.join(train_dir, dir_name)
+            dst = os.path.join(valid_dir, dir_name)
+            futures.append(executor.submit(copy_image_to_validation, src, dst))
+        
+        # Process the futures as they complete
+        copied_count = 0
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to validation"):
+            try:
+                copied_count += future.result()
+            except Exception as e:
+                print(f"Error copying image: {e}")
+
+    print(f"Copied {copied_count} images from {len(subdirs)} directories to validation set.")
+    
                 
 # Main function to download and process data
 def main():
@@ -282,6 +390,11 @@ def main():
                 for future in as_completed(futures):
                     pbar.update(1)
 
+    # Setup test data
+    setup_test_data(images_directory, test_directory)
+    
+    # Setup validation data
+    setup_validation_data(images_directory, valid_directory)
 
 
 if __name__ == "__main__":
