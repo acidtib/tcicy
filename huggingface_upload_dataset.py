@@ -1,20 +1,15 @@
-import json
 from datasets import load_dataset
-from huggingface_hub import login
 
 # Load the dataset from the local folder
 dataset = load_dataset("imagefolder", 
-                       data_dir="/media/acid/turtle/datasets/tcg_magic/data",
-                       split={
-                         "train": "train[:1000]", 
-                         "test": "test[:1000]", 
-                         "valid": "validation[:1000]"
-                        })
-
-# Print the number of examples in each split
-print(f"Number of examples in train: {len(dataset['train'])}")
-print(f"Number of examples in test: {len(dataset['test'])}")
-print(f"Number of examples in test: {len(dataset['valid'])}")
+                        data_dir="datasets/tcg_magic/data",
+                        split={
+                            "train": "train", 
+                            "test": "test", 
+                            "valid": "validation"
+                        },
+                        streaming=True
+)
 
 print("Uploading to Hugging Face Hub...")
 

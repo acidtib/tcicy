@@ -101,7 +101,6 @@ def setup_test_data(train_dir, test_dir):
 
     print(f"Copied all {len(subdirs)} directories to test set, copying up to 5 images in each.")
 
-
 def copy_image_to_validation(src, dst):
     # Check if the destination directory already exists
     if os.path.exists(dst):
@@ -323,8 +322,7 @@ def main():
     print(f"Fetching {', '.join(BULK_DATA_TYPES)} from Scryfall")
     
     # Create the directory if it doesn't exist
-    # directory = 'datasets/tcg_magic'
-    directory = '/media/acid/turtle/datasets/tcg_magic'
+    directory = 'datasets/tcg_magic'
     os.makedirs(directory, exist_ok=True)
     images_directory = f"{directory}/data/train"
     os.makedirs(images_directory, exist_ok=True)
