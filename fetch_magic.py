@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 15
+MAX_IMAGES_PER_FILE = 200
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() if os.cpu_count() is not None else 2
