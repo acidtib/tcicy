@@ -2,6 +2,8 @@ import glob
 import os
 from datasets import Dataset, DatasetDict, Image, ClassLabel, Features
 
+DATA_PATH = '/media/acid/turtle/datasets/tcg_magic'
+
 # Function to create a dataset for a split
 def create_split_dataset(image_paths, labels):
     # Get unique labels
@@ -23,29 +25,32 @@ def create_split_dataset(image_paths, labels):
     return Dataset.from_dict(data_dict, features=features)
 
 # Gather image paths from train, test, and valid directories
-train_paths = glob.glob("datasets/tcg_magic/data/train/**/*.jpg", recursive=True)
-test_paths = glob.glob("datasets/tcg_magic/data/test/**/*.jpg", recursive=True)
-valid_paths = glob.glob("datasets/tcg_magic/data/valid/**/*.jpg", recursive=True)
+print("Gathering image paths...")
+train_paths = glob.glob(DATA_PATH + "/data/train/**/*.jpg", recursive=True)
+valid_paths = glob.glob(DATA_PATH + "/data/valid/**/*.jpg", recursive=True)
 
 # Create labels based on folder structure or filenames
+print("Creating labels...")
 train_labels = [os.path.basename(os.path.dirname(path)) for path in train_paths]
-test_labels = [os.path.basename(os.path.dirname(path)) for path in test_paths]
 valid_labels = [os.path.basename(os.path.dirname(path)) for path in valid_paths]
 
-# Create datasets for each split
+# Create dataset for each split
+print("Creating datasets...")
 train_dataset = create_split_dataset(train_paths, train_labels)
-test_dataset = create_split_dataset(test_paths, test_labels)
 valid_dataset = create_split_dataset(valid_paths, valid_labels)
 
 # Combine splits into a DatasetDict
+print("Combining dataset...")
 dataset_dict = DatasetDict({
     "train": train_dataset,
-    "test": test_dataset,
     "valid": valid_dataset
 })
 
-# Push all splits to Hugging Face Hub in one go
-print("Uploading dataset with all splits")
-dataset_dict.push_to_hub("acidtib/tcg-magic-cards", create_pr=True)
+# save as Arrow locally
+print("Saving dataset...")
+dataset_dict.save_to_disk(
+    "/media/acid/turtle/huggingface/tcg-magic-cards/data",
+    num_proc=os.cpu_count()
+)
 
-print("Dataset with splits uploaded to Hugging Face Hub successfully!")
+print("Done!")

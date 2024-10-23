@@ -11,7 +11,10 @@ from tqdm import tqdm
 
 # Define the maximum number of images to download from each JSON file
 # Set to None if you want to download all cards
-MAX_IMAGES_PER_FILE = 200
+MAX_IMAGES_PER_FILE = 1000
+
+# Define the path to the directory where the data will be stored
+DATA_PATH = '/media/acid/turtle/datasets/tcg_magic'
 
 # Define the number of threads to use for downloading images
 NUM_THREADS = os.cpu_count() if os.cpu_count() is not None else 2
@@ -21,7 +24,7 @@ PROCESS_IMAGES = True
 
 # Generate augmented images
 GENERATE_AUGMENTED = True
-AUGMENTED_AMOUNT = 7
+AUGMENTED_AMOUNT = 5
 
 # Define the types of bulk data to download
 BULK_DATA_TYPES = [
@@ -201,28 +204,28 @@ def generate_augmented_images(img_path, save_dir, total_number=5):
     
     return True  # Images generated, return True to indicate success
 
-# Utility function to copy up to 4 images to test directory
-def copy_images_to_test(src, dst):
+# Utility function to copy up to 2 images to test directory
+def move_images_to_test(src, dst):
     # Initialize existing_images as an empty list
     existing_images = []
     
     ensure_directory_exists(dst)
     
     existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    if len(existing_images) >= 4:
-        return 0  # Skip if there are already 4 or more images
+    if len(existing_images) >= 2:
+        return 0  # Skip if there are already 2 or more images
     
     # Get all image files in the source directory
     image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
-    # Select up to 4 images to copy, excluding any that already exist in dst
-    images_to_copy = [img for img in image_files[:4] if img not in existing_images]
+    # Select up to 2 images to move, excluding any that already exist in dst
+    images_to_move = [img for img in image_files[:2] if img not in existing_images]
 
-    # Copy the selected images
-    for image in images_to_copy:
-        shutil.copy2(os.path.join(src, image), os.path.join(dst, image))
+    # Move the selected images
+    for image in images_to_move:
+        shutil.move(os.path.join(src, image), os.path.join(dst, image))
 
-    return len(images_to_copy)
+    return len(images_to_move)
 
 # Utility function to set up test data
 def setup_test_data(train_dir, test_dir):
@@ -235,10 +238,10 @@ def setup_test_data(train_dir, test_dir):
     print(f"Found {len(subdirs)} subdirectories in train directory")
     
     if not subdirs:
-        print("No subdirectories found in train directory. Nothing to copy.")
+        print("No subdirectories found in train directory. Nothing to move.")
         return
     
-    # Use ThreadPoolExecutor to copy images in parallel
+    # Use ThreadPoolExecutor to move images in parallel
     with ThreadPoolExecutor() as executor:
         # Create a list to keep track of futures
         futures = []
@@ -247,18 +250,18 @@ def setup_test_data(train_dir, test_dir):
         for dir_name in subdirs:
             src = os.path.join(train_dir, dir_name)
             dst = os.path.join(test_dir, dir_name)
-            futures.append(executor.submit(copy_images_to_test, src, dst))
+            futures.append(executor.submit(move_images_to_test, src, dst))
         
         # Process the futures as they complete
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to test"):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Moving to test"):
             try:
                 result = future.result()
             except Exception as e:
-                print(f"Error copying images: {e}")
+                print(f"Error moving images: {e}")
 
-    print(f"Copied all {len(subdirs)} directories to test set, copying up to 4 images in each.")
+    print(f"Moved all {len(subdirs)} directories to test set, moving up to 4 images in each.")
 
-def copy_image_to_validation(src, dst):
+def move_image_to_validation(src, dst):
     ensure_directory_exists(dst)
         
     existing_images = [f for f in os.listdir(dst) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
@@ -268,10 +271,10 @@ def copy_image_to_validation(src, dst):
     # Get all image files in the source directory
     image_files = [f for f in os.listdir(src) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 
-    # Select 1 image to copy
+    # Select 1 image to move
     if image_files:
-        image_to_copy = image_files[0]
-        shutil.copy2(os.path.join(src, image_to_copy), os.path.join(dst, image_to_copy))
+        image_to_move = image_files[0]
+        shutil.move(os.path.join(src, image_to_move), os.path.join(dst, image_to_move))
         return 1
     return 0
 
@@ -285,7 +288,7 @@ def setup_validation_data(train_dir, valid_dir):
     print(f"Found {len(subdirs)} subdirectories in train directory")
     
     if not subdirs:
-        print("No subdirectories found in train directory. Nothing to copy.")
+        print("No subdirectories found in train directory. Nothing to move.")
         return
     
     # Use ThreadPoolExecutor to copy images in parallel
@@ -297,23 +300,23 @@ def setup_validation_data(train_dir, valid_dir):
         for dir_name in subdirs:
             src = os.path.join(train_dir, dir_name)
             dst = os.path.join(valid_dir, dir_name)
-            futures.append(executor.submit(copy_image_to_validation, src, dst))
+            futures.append(executor.submit(move_image_to_validation, src, dst))
         
         # Process the futures as they complete
-        copied_count = 0
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Copying to validation"):
+        moved_count = 0
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Moving to validation"):
             try:
-                copied_count += future.result()
+                moved_count += future.result()
             except Exception as e:
-                print(f"Error copying image: {e}")
+                print(f"Error moving image: {e}")
 
-    print(f"Copied {copied_count} images from {len(subdirs)} directories to validation set.")
+    print(f"Moved {moved_count} images from {len(subdirs)} directories to validation set.")
     
                 
 # Main function to download and process data
 def main():
     print("\nFetching data from Scryfall...\n")
-    directory = 'datasets/tcg_magic'
+    directory = DATA_PATH
     ensure_directory_exists(directory)
     images_directory = os.path.join(directory, "data", "train")
     test_directory = os.path.join(directory, "data", "test")
